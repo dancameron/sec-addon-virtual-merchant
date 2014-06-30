@@ -124,17 +124,17 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 
 	/**
 	 * Process a payment
-	 * @param SEC_Checkouts $checkout
-	 * @param SEC_Purchase $purchase
-	 * @return SEC_Payment|bool FALSE if the payment failed, otherwise a Payment object
+	 * @param Group_Buying_Checkouts $checkout
+	 * @param Group_Buying_Purchase $purchase
+	 * @return Group_Buying_Payment|bool FALSE if the payment failed, otherwise a Payment object
 	 */
-	public function process_payment( SEC_Checkouts $checkout, SEC_Purchase $purchase ) {
+	public function process_payment( Group_Buying_Checkouts $checkout, Group_Buying_Purchase $purchase ) {
 		if ( $purchase->get_total($this->get_payment_method()) < 0.01 ) {
 			// Nothing to do here, another payment handler intercepted and took care of everything
 			// See if we can get that payment and just return it
-			$payments = SEC_Payment::get_payments_for_purchase($purchase->get_id());
+			$payments = Group_Buying_Payment::get_payments_for_purchase($purchase->get_id());
 			foreach ( $payments as $payment_id ) {
-				$payment = SEC_Payment::get_instance($payment_id);
+				$payment = Group_Buying_Payment::get_instance($payment_id);
 				return $payment;
 			}
 		}
@@ -208,10 +208,9 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 			$shipping_address['postal_code'] = $checkout->cache['shipping']['postal_code'];
 			$shipping_address['country'] = $checkout->cache['shipping']['country'];
 		}
-		$payment_id = SEC_Payment::new_payment(array(
+		$payment_id = Group_Buying_Payment::new_payment(array(
 			'payment_method' => $this->get_payment_method(),
 			'purchase' => $purchase->get_id(),
-			'amount' => $post_data['x_amount'],
 			'amount' => $post_data['ssl_amount'],
 			'data' => array(
 				'txn_id' => $response_result['ssl_txn_id'],
@@ -221,12 +220,12 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 			),
 			'deals' => $deal_info,
 			'shipping_address' => $shipping_address,
-		), SEC_Payment::STATUS_AUTHORIZED);
+		), Group_Buying_Payment::STATUS_AUTHORIZED);
 
 		if ( !$payment_id ) {
 			return FALSE;
 		}
-		$payment = SEC_Payment::get_instance($payment_id);
+		$payment = Group_Buying_Payment::get_instance($payment_id);
 		do_action('payment_authorized', $payment);
 		$payment->set_data($response);
 		return $payment;
@@ -235,20 +234,20 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 	/**
 	 * Complete the purchase after the process_payment action, otherwise vouchers will not be activated.
 	 *
-	 * @param SEC_Purchase $purchase
+	 * @param Group_Buying_Purchase $purchase
 	 * @return void
 	 */
-	public function complete_purchase( SEC_Purchase $purchase ) {
+	public function complete_purchase( Group_Buying_Purchase $purchase ) {
 		$items_captured = array(); // Creating simple array of items that are captured
 		foreach ( $purchase->get_products() as $item ) {
 			$items_captured[] = $item['deal_id'];
 		}
-		$payments = SEC_Payment::get_payments_for_purchase($purchase->get_id());
+		$payments = Group_Buying_Payment::get_payments_for_purchase($purchase->get_id());
 		foreach ( $payments as $payment_id ) {
-			$payment = SEC_Payment::get_instance($payment_id);
+			$payment = Group_Buying_Payment::get_instance($payment_id);
 			do_action('payment_captured', $payment, $items_captured);
 			do_action('payment_complete', $payment);
-			$payment->set_status(SEC_Payment::STATUS_COMPLETE);
+			$payment->set_status(Group_Buying_Payment::STATUS_COMPLETE);
 		}
 	}
 
@@ -269,11 +268,11 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 
 	/**
 	 * Build the NVP data array for submitting the current checkout to Authorize as an Authorization request
-	 * @param SEC_Checkouts $checkout
-	 * @param SEC_Purchase $purchase
+	 * @param Group_Buying_Checkouts $checkout
+	 * @param Group_Buying_Purchase $purchase
 	 * @return array
 	 */
-	private function nvp_data_array( SEC_Checkouts $checkout, SEC_Purchase $purchase ) {
+	private function nvp_data_array( Group_Buying_Checkouts $checkout, Group_Buying_Purchase $purchase ) {
 		if ( self::DEBUG ) error_log( "checkout: " . print_r( $checkout->cache, true ) );
 		$user = get_userdata($purchase->get_user());
 		$NVP= array();
