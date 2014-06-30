@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Smart eCart Payment Processor - VirtualMerchant
-Version: 1.1
+Version: 1
 Plugin URI: http://sproutventure.com/wordpress/smart-ecart
 Description: VirtualMerchant Add-on.
 Author: Sprout Venture

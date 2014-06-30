@@ -12,19 +12,21 @@
  * You may also want to register some settings for the Payment Options page
  */
  
-class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
-	const API_ENDPOINT_SANDBOX = 'https://secure.virtualmerchant.com/interfaces/a.net.test';
-	const API_ENDPOINT_LIVE = 'https://secure.virtualmerchant.com/gateway/transact.dll';
+class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
+	const API_ENDPOINT_SANDBOX = 'https://demo.myvirtualmerchant.com/VirtualMerchantDemo/process.do';
+	const API_ENDPOINT_LIVE = 'https://www.myvirtualmerchant.com/VirtualMerchant/process.do';
 	const MODE_TEST = 'sandbox';
 	const MODE_LIVE = 'live';
 	const API_USERNAME_OPTION = 'sec_virtualmerchant_username';
 	const API_PASSWORD_OPTION = 'sec_virtualmerchant_password';
+	const API_PIN_OPTION = 'sec_virtualmerchant_pin';
 	const API_MODE_OPTION = 'sec_virtualmerchant_mode';
 	const PAYMENT_METHOD = 'Credit (VirtualMerchant)';
 	protected static $instance;
 	private $api_mode = self::MODE_TEST;
 	private $api_username = '';
 	private $api_password = '';
+	private $api_pin = '';
 	
 	public static function get_instance() {
 		if ( !(isset(self::$instance) && is_a(self::$instance, __CLASS__)) ) {
@@ -49,6 +51,7 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 		parent::__construct();
 		$this->api_username = get_option(self::API_USERNAME_OPTION, '');
 		$this->api_password = get_option(self::API_PASSWORD_OPTION, '');
+		$this->api_pin = get_option( self::API_PIN_OPTION, '' );
 		$this->api_mode = get_option(self::API_MODE_OPTION, self::MODE_TEST);
 
 		if ( is_admin() ) {
@@ -86,18 +89,28 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 							)
 						),
 					self::API_USERNAME_OPTION => array(
-						'label' => self::__( 'API Login (Username)' ),
+						'label' => self::__( 'VirtualMerchant ID' ),
 						'option' => array(
 							'type' => 'text',
 							'default' => get_option( self::API_USERNAME_OPTION, '' )
-							)
+							),
+						'description' => self::__('ID as provided by Elavon')
 						),
 					self::API_PASSWORD_OPTION => array(
-						'label' => self::__( 'Transaction Key (Password)' ),
+						'label' => self::__( 'VirtualMerchant user ID' ),
 						'option' => array(
 							'type' => 'text',
 							'default' => get_option( self::API_PASSWORD_OPTION, '' )
-							)
+							),
+						'description' => self::__('ID as configured on VirtualMerchant (case sensitive)')
+						),
+					self::API_PIN_OPTION => array(
+						'label' => self::__( 'VirtualMerchant PIN' ),
+						'option' => array(
+							'type' => 'text',
+							'default' => get_option( self::API_PIN_OPTION, '' )
+							),
+						'description' => self::__('PIN as generated within VirtualMerchant (case sensitive)')
 						)
 					)
 				)
@@ -126,8 +139,8 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 			}
 		}
 
-		$post_data = $this->aim_data($checkout, $purchase);
-		if ( self::DEBUG ) error_log( '----------Authorize Net Response----------' . print_r( $post_data, true ) );
+		$post_data = $this->nvp_data_array($checkout, $purchase);
+		if ( self::DEBUG ) error_log( '----------Virtual Merchant DATA----------' . print_r( $post_data, true ) );
 		$post_string = "";
 		
 		foreach ( $post_data as $key => $value ) {
@@ -137,23 +150,38 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 				$post_string .= "{$key}=".urlencode( $value )."&";
 			}
 		}
-		$post_string = rtrim ( $post_string, "& " );
+		$post_string = rtrim( $post_string, "& " );
 		if ( self::DEBUG ) error_log( "post_string: " . print_r( $post_string, true ) );
-		$response = wp_remote_post( $this->get_api_url(), array(
+
+		$raw_response = wp_remote_post( $this->get_api_url(), array(
   			'method' => 'POST',
 			'body' => $post_string,
 			'timeout' => apply_filters( 'http_request_timeout', 15),
 			'sslverify' => false
 		));
-		if ( is_wp_error($response) ) {
+		if ( is_wp_error( $raw_response ) ) {
+			return FALSE;
+		}
+		$response = wp_remote_retrieve_body( $raw_response );
+		if ( self::DEBUG ) error_log( '----------Virtual Merchant Response----------' . print_r($response, TRUE));
+
+		// Build array from response
+		$response_result = array();
+		$response_values = explode( "\n", $response );
+		foreach ($response_values as $value) {
+			list($k, $v) = explode('=', $value);
+			$response_result[ $k ] = $v;
+		}
+		if ( self::DEBUG ) error_log( '----------Virtual Merchant Response----------' . print_r($response_result, TRUE));
+
+		// Check if there's an error.
+		if ( isset( $response_result['errorMessage'] ) ) {
+			$this->set_error_messages( $response_result['errorMessage'] );
 			return FALSE;
 		}
 
-		$response = explode( $post_data['x_delim_char'], $response['body'] );
-		$response_code = $response[0]; // The response we want to validate on
-		if ( self::DEBUG ) error_log( '----------Authorize Net Response----------' . print_r($response, TRUE));
-		if ( $response_code != 1 ) {
-			$this->set_error_messages($response[3]);
+		if ( !isset( $response_result['ssl_result_message'] ) || $response_result['ssl_result_message'] != 'APPROVAL' ) {
+			$this->set_error_messages( self::__('Declined. ID: ') . $response_result['ssl_txn_id'] );
 			return FALSE;
 		}
 		
@@ -181,12 +209,15 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 			'purchase' => $purchase->get_id(),
 			'amount' => $post_data['x_amount'],
 			'data' => array(
-				'api_response' => $response,
+				'txn_id' => $response_result['ssl_txn_id'],
+				'api_response' => $response_result,
+				'api_raw_response' => $response,
 				'masked_cc_number' => $this->mask_card_number($this->cc_cache['cc_number']), // save for possible credits later
 			),
 			'deals' => $deal_info,
 			'shipping_address' => $shipping_address,
 		), SEC_Payment::STATUS_AUTHORIZED);
+
 		if ( !$payment_id ) {
 			return FALSE;
 		}
@@ -237,71 +268,34 @@ class SEC_VirtualMerchant extends SEC_Credit_Card_Processors {
 	 * @param SEC_Purchase $purchase
 	 * @return array
 	 */
-	private function aim_data( SEC_Checkouts $checkout, SEC_Purchase $purchase ) {
+	private function nvp_data_array( SEC_Checkouts $checkout, SEC_Purchase $purchase ) {
 		if ( self::DEBUG ) error_log( "checkout: " . print_r( $checkout->cache, true ) );
 		$user = get_userdata($purchase->get_user());
-		$AIMdata = array();
-		$AIMdata ['x_login'] = $this->api_username;
-		$AIMdata ['x_tran_key'] = $this->api_password;
+		$NVP= array();
 
-		$AIMdata ['x_version'] = '3.1';
-		$AIMdata ['x_delim_data'] = 'TRUE';
-		$AIMdata ['x_delim_char'] = '|';
-		$AIMdata ['x_relay_response'] = 'FALSE';
-		$AIMdata ['x_type'] = 'AUTH_CAPTURE';
-		$AIMdata ['x_method'] = 'CC';
+		$NVP['ssl_merchant_id'] = $this->api_username;
+		$NVP['ssl_user_id'] = $this->api_password;
+		$NVP['ssl_pin'] = $this->api_pin;
 
-		$AIMdata ['x_card_num'] = $this->cc_cache['cc_number'];
-		$AIMdata ['x_exp_date'] = substr('0' . $this->cc_cache['cc_expiration_month'], -2) . substr($this->cc_cache['cc_expiration_year'], -2);
-		$AIMdata ['x_card_code'] = $this->cc_cache['cc_cvv'];
+		$NVP['ssl_amount'] = gb_get_number_format($purchase->get_total($this->get_payment_method()));
+		$NVP['ssl_transaction_type'] = 'ccsale';
 
-		$AIMdata ['x_amount'] = sec_get_number_format($purchase->get_total($this->get_payment_method()));
+		$NVP['ssl_card_number'] = $this->cc_cache['cc_number'];
+		$NVP['ssl_exp_date'] = substr('0' . $this->cc_cache['cc_expiration_month'], -2) . substr($this->cc_cache['cc_expiration_year'], -2);
+		$NVP['ssl_cvv2cvc2_indicator'] = 1;
+		$NVP['ssl_cvv2cvc2'] = $this->cc_cache['cc_cvv'];
 
-		$AIMdata ['x_first_name'] = $checkout->cache['billing']['first_name'];
-		$AIMdata ['x_last_name'] = $checkout->cache['billing']['last_name'];
-		$AIMdata ['x_address'] = $checkout->cache['billing']['street'];
-		$AIMdata ['x_city'] = $checkout->cache['billing']['city'];
-		$AIMdata ['x_state'] = $checkout->cache['billing']['zone'];
-		$AIMdata ['x_zip'] = $checkout->cache['billing']['postal_code'];
-		$AIMdata ['x_phone'] = $checkout->cache['billing']['phone'];
+		$NVP['ssl_avs_address'] = $checkout->cache['billing']['street'];
+		$NVP['ssl_avs_zip'] = $checkout->cache['billing']['postal_code'];
 
-		$AIMdata ['x_email'] = $user->user_email;
-		$AIMdata ['x_cust_id'] = $user->ID;
 
-		$AIMdata['x_invoice_num'] = $purchase->get_id();
+		$NVP['ssl_show_form'] = false;
+		$NVP['ssl_invoice_number'] = $purchase->get_id();
+		$NVP['ssl_result_format'] = 'ASCII';
 
-		$AIMdata['x_freight'] = sec_get_number_format($purchase->get_shipping_total($this->get_payment_method()));
-		$AIMdata['x_tax'] = sec_get_number_format($purchase->get_tax_total($this->get_payment_method()));
-		
-		$line_items = '';
-		foreach ( $purchase->get_products() as $item ) {
-			if ( isset($item['payment_method'][$this->get_payment_method()]) ) {
-				$deal = SEC_Deal::get_instance($item['deal_id']);
-				$tax = $deal->get_tax();
-				$tax = ( !empty($tax) && $tax > '0' ) ? 'Y' : 'N' ;
-				$line_items .= $item['deal_id'].'<|>'.substr($deal->get_slug(), 0, 31).'<|><|>'.$item['quantity'].'<|>'.sec_get_number_format($item['unit_price']).'<|>'.$tax.'&x_line_item=';
-			}
-		}
-		$AIMdata['x_line_item'] = rtrim ( $line_items, "&x_line_item=" );
+		$NVP = apply_filters('sec_virtualmerchant_nvp_data', $NVP); 
 
-		if ( isset($checkout->cache['shipping']) ) {
-			$AIMdata['x_ship_to_first_name'] = $checkout->cache['shipping']['first_name'];
-			$AIMdata['x_ship_to_last_name'] = $checkout->cache['shipping']['last_name'];
-			$AIMdata['x_ship_to_address'] = $checkout->cache['shipping']['street'];
-			$AIMdata['x_ship_to_city'] = $checkout->cache['shipping']['city'];
-			$AIMdata['x_ship_to_state'] = $checkout->cache['shipping']['zone'];
-			$AIMdata['x_ship_to_zip'] = $checkout->cache['shipping']['postal_code'];
-			$AIMdata['x_ship_to_country'] = $checkout->cache['shipping']['country'];
-		}
-
-		if ( $this->api_mode == self::MODE_TEST ) {
-			$AIMdata ['x_test_request'] = 'TRUE';
-		}
-
-		$AIMdata = apply_filters('sec_virtualmerchant_nvp_data', $AIMdata); 
-
-		//$AIMdata = array_map('rawurlencode', $AIMdata);
-		return $AIMdata;
+		return $NVP;
 	}
 
 
