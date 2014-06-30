@@ -165,6 +165,10 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 		$response = wp_remote_retrieve_body( $raw_response );
 		if ( self::DEBUG ) error_log( '----------Virtual Merchant Response----------' . print_r($response, TRUE));
 
+		if ( $post_data['ssl_result_format'] == 'HTML' ) {
+			print $response;
+		}
+		
 		// Build array from response
 		$response_result = array();
 		$response_values = explode( "\n", $response );
@@ -208,6 +212,7 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 			'payment_method' => $this->get_payment_method(),
 			'purchase' => $purchase->get_id(),
 			'amount' => $post_data['x_amount'],
+			'amount' => $post_data['ssl_amount'],
 			'data' => array(
 				'txn_id' => $response_result['ssl_txn_id'],
 				'api_response' => $response_result,
@@ -287,11 +292,13 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 
 		$NVP['ssl_avs_address'] = $checkout->cache['billing']['street'];
 		$NVP['ssl_avs_zip'] = $checkout->cache['billing']['postal_code'];
+		$NVP['ssl_email'] = $user->user_email;
 
 
-		$NVP['ssl_show_form'] = false;
+		$NVP['ssl_show_form'] = 'false';
 		$NVP['ssl_invoice_number'] = $purchase->get_id();
 		$NVP['ssl_result_format'] = 'ASCII';
+		//$NVP['ssl_result_format'] = 'HTML';
 
 		$NVP = apply_filters('sec_virtualmerchant_nvp_data', $NVP); 
 
