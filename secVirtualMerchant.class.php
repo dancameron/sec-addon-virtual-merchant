@@ -188,7 +188,7 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 			$this->set_error_messages( self::__('Declined. ID: ') . $response_result['ssl_txn_id'] );
 			return FALSE;
 		}
-		
+
 		$deal_info = array(); // creating purchased products array for payment below
 		foreach ( $purchase->get_products() as $item ) {
 			if ( isset($item['payment_method'][$this->get_payment_method()]) ) {
@@ -298,6 +298,15 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 		$NVP['ssl_invoice_number'] = $purchase->get_id();
 		$NVP['ssl_result_format'] = 'ASCII';
 		//$NVP['ssl_result_format'] = 'HTML';
+		
+		$NVP['ssl_cardholder_ip'] = $_SERVER['SERVER_ADDR'];
+
+		$NVP['ssl_first_name'] = $checkout->cache['billing']['first_name'];
+		$NVP['ssl_last_name'] = $checkout->cache['billing']['last_name'];
+		$NVP['ssl_city'] = $checkout->cache['billing']['city'];
+		$NVP['ssl_state'] = $checkout->cache['billing']['zone'];
+		$NVP['ssl_country'] = self::country_code( $checkout->cache['billing']['country'] );
+		$NVP['ssl_phone'] = $checkout->cache['billing']['phone'];
 
 		$NVP = apply_filters('sec_virtualmerchant_nvp_data', $NVP); 
 
@@ -315,6 +324,13 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 
 	public function display_limits_meta_box() {
 		return dirname( __FILE__ ) . '/views/meta-boxes/no-tipping.php';
+	}
+
+	private static function country_code( $country = null ) {
+		if ( null != $country ) {
+			return $country;
+		}
+		return 'US';
 	}
 
 }
