@@ -298,15 +298,16 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 		$NVP['ssl_invoice_number'] = $purchase->get_id();
 		$NVP['ssl_result_format'] = 'ASCII';
 		//$NVP['ssl_result_format'] = 'HTML';
-		
-		$NVP['ssl_cardholder_ip'] = $_SERVER['SERVER_ADDR'];
 
+		$NVP['ssl_cardholder_ip'] = ( $_SERVER['SERVER_ADDR'] != '127.0.0.1' ) ? $_SERVER['SERVER_ADDR'] : '107.170.247.98';
+
+		$NVP['ssl_company'] = ( isset( $checkout->cache['billing']['company'] ) ) ? $checkout->cache['billing']['company'] : '';
 		$NVP['ssl_first_name'] = $checkout->cache['billing']['first_name'];
 		$NVP['ssl_last_name'] = $checkout->cache['billing']['last_name'];
 		$NVP['ssl_city'] = $checkout->cache['billing']['city'];
 		$NVP['ssl_state'] = $checkout->cache['billing']['zone'];
 		$NVP['ssl_country'] = self::country_code( $checkout->cache['billing']['country'] );
-		$NVP['ssl_phone'] = $checkout->cache['billing']['phone'];
+		$NVP['ssl_phone'] = ( isset( $checkout->cache['billing']['phone'] ) ) ? $checkout->cache['billing']['phone'] : '';
 
 		$NVP = apply_filters('sec_virtualmerchant_nvp_data', $NVP); 
 
@@ -330,7 +331,7 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 		if ( null != $country ) {
 			return $country;
 		}
-		return 'US';
+		return 'USA';
 	}
 
 }
