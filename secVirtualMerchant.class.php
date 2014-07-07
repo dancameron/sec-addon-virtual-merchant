@@ -74,7 +74,7 @@ class SEC_VirtualMerchant extends Group_Buying_Credit_Card_Processors {
 		// Settings
 		$settings = array(
 			'sec_virtualmerchant_settings' => array(
-				'title' => self::__( 'Authorize.net' ),
+				'title' => self::__( 'Virtual Merchant' ),
 				'weight' => 200,
 				'settings' => array(
 					self::API_MODE_OPTION => array(
